@@ -9,9 +9,9 @@ export async function POST(req: Request) {
     text: string;
   };
   if (!text?.trim()) return Response.json({ ok: false }, { status: 400 });
-  pushUser(conversationId, text.trim());
+  await pushUser(conversationId, text.trim());
   const beats = await respondBeats(conversationId, text.trim());
   // 用户发完到对方开口之间留一点反应时间
-  enqueue(conversationId, beats, Date.now() + 500);
+  await enqueue(conversationId, beats, Date.now() + 500);
   return Response.json({ ok: true, beats: beats.length });
 }

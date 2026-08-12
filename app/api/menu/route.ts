@@ -6,8 +6,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * 菜单组件的数据。吃什么给菜品，周末去哪给活动，
- * 两边都受置顶偏好约束，类型与就餐方式是当下的视图筛选。
+ * 菜单组件的数据。吃什么给菜品,周末去哪给活动,
+ * 两边都受置顶偏好约束,类型与就餐方式是当下的视图筛选。
  */
 export async function GET(req: Request) {
   const u = new URL(req.url);
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   const serve = (u.searchParams.get("serve") ?? "all") as Serve;
 
   if (c === "g-weekend") {
-    const { list, relaxed } = filterOutings(c, { cat });
+    const { list, relaxed } = await filterOutings(c, { cat });
     return Response.json({
       kind: "outing",
       cats: OUTING_CATS,
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     });
   }
 
-  const { list, relaxed } = filterDishes(c, { cat, serve });
+  const { list, relaxed } = await filterDishes(c, { cat, serve });
   return Response.json({
     kind: "dish",
     cats: DISH_CATS,

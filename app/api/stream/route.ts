@@ -2,12 +2,15 @@ import { delivered, typingNow } from "@/lib/outbox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Vercel serverless 单次执行有超时上限,SSE 一直挂着会被中间层杀掉;
+// 前端 EventSource 会自动重连,拿 ?seq= 续上就行。
+export const maxDuration = 60;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * 消息按 deliver_at 逐条到达，正在输入按 typing_at 出现。
- * 节奏由数据决定而不是前端定时器，所以刷新页面也不会一次刷出全部。
+ * 消息按 deliver_at 逐条到达,正在输入按 typing_at 出现。
+ * 节奏由数据决定而不是前端定时器,所以刷新页面也不会一次刷出全部。
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -36,15 +39,19 @@ export async function GET(req: Request) {
       let lastTyping: string | null = null;
       send("hello", { ok: true });
       while (!closed) {
-        const msgs = delivered(conv, seq);
-        for (const m of msgs) {
-          send("msg", m);
-          seq = m.seq;
-        }
-        const t = typingNow(conv);
-        if (t !== lastTyping) {
-          lastTyping = t;
-          send("typing", { sender: t });
+        try {
+          const msgs = await delivered(conv, seq);
+          for (const m of msgs) {
+            send("msg", m);
+            seq = m.seq;
+          }
+          const t = await typingNow(conv);
+          if (t !== lastTyping) {
+            lastTyping = t;
+            send("typing", { sender: t });
+          }
+        } catch {
+          // 一次查询失败不要炸掉整条流,继续下一轮
         }
         await sleep(220);
       }

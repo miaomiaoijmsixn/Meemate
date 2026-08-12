@@ -5,13 +5,13 @@ import type { Profile } from "./types";
 export type Tag = { name: string; on: boolean; custom?: boolean };
 export type Pref = { min: number; max: number; tags: Tag[] };
 
-/** 就餐方式：菜单里的当下视图筛选，跟长期偏好分开 */
+/** 就餐方式:菜单里的当下视图筛选,跟长期偏好分开 */
 export type Serve = "all" | "dine" | "deliver";
 
-/** 每个群一套置顶偏好，冷启动的答案是它的初值 */
-const DEFAULTS: Record<string, () => Pref> = {
-  "g-eat": () => {
-    const p = kvGet<Profile>("profile", null as unknown as Profile);
+/** 每个群一套置顶偏好,冷启动的答案是它的初值 */
+const DEFAULTS: Record<string, () => Promise<Pref>> = {
+  "g-eat": async () => {
+    const p = await kvGet<Profile>("profile", null as unknown as Profile);
     const nums = (p?.budget ?? "25 到 40").match(/\d+/g)?.map(Number) ?? [25, 40];
     return {
       min: 0,
@@ -23,8 +23,8 @@ const DEFAULTS: Record<string, () => Pref> = {
       ],
     };
   },
-  // 周末的决策维度跟吃饭完全不同：室内还是户外、要花多久、几点出门、要不要门票
-  "g-weekend": () => ({
+  // 周末的决策维度跟吃饭完全不同:室内还是户外、要花多久、几点出门、要不要门票
+  "g-weekend": async () => ({
     min: 0,
     max: 300,
     tags: [
@@ -40,17 +40,18 @@ const DEFAULTS: Record<string, () => Pref> = {
 export const CEIL: Record<string, number> = { "g-eat": 120, "g-weekend": 300 };
 export const priceCeil = (convId: string) => CEIL[convId] ?? 120;
 
-export function getPref(convId: string): Pref {
+export async function getPref(convId: string): Promise<Pref> {
   const key = `prefs:${convId}`;
-  const saved = kvGet<Pref | null>(key, null);
+  const saved = await kvGet<Pref | null>(key, null);
   if (saved?.tags) return saved;
-  const def = (DEFAULTS[convId] ?? DEFAULTS["g-eat"])();
-  kvSet(key, def);
+  const factory = DEFAULTS[convId] ?? DEFAULTS["g-eat"];
+  const def = await factory();
+  await kvSet(key, def);
   return def;
 }
 
-export function setPref(convId: string, pref: Pref) {
-  kvSet(`prefs:${convId}`, pref);
+export async function setPref(convId: string, pref: Pref): Promise<Pref> {
+  await kvSet(`prefs:${convId}`, pref);
   return pref;
 }
 
@@ -71,11 +72,11 @@ function hitDish(d: Dish, tag: string) {
   }
 }
 
-export function filterDishes(
+export async function filterDishes(
   convId: string,
   opts: { cat?: string; serve?: Serve; exclude?: string[]; minCount?: number } = {},
 ) {
-  const pref = getPref(convId);
+  const pref = await getPref(convId);
   const on = pref.tags.filter((t) => t.on).map((t) => t.name);
   const ex = new Set(opts.exclude ?? []);
   const base = (d: Dish) =>
@@ -85,9 +86,9 @@ export function filterDishes(
     (!opts.serve || opts.serve === "all" || (opts.serve === "dine" ? d.dine : d.deliver)) &&
     !ex.has(d.key);
   const strict = DISHES.filter((d) => base(d) && on.every((t) => hitDish(d, t)));
-  // 够数就用严格结果；不够（相似推荐要求至少 3 个）才放宽标签
+  // 够数就用严格结果;不够(相似推荐要求至少 3 个)才放宽标签
   if (strict.length >= (opts.minCount ?? 1)) return { list: strict, relaxed: false as const };
-  // 只放宽标签，价格与就餐方式是用户明确设的，绝不悄悄越过
+  // 只放宽标签,价格与就餐方式是用户明确设的,绝不悄悄越过
   const loose = DISHES.filter(base);
   return { list: loose, relaxed: loose.length > strict.length };
 }
@@ -115,11 +116,11 @@ function hitOuting(o: Outing, tag: string) {
   }
 }
 
-export function filterOutings(
+export async function filterOutings(
   convId: string,
   opts: { cat?: string; exclude?: string[]; minCount?: number } = {},
 ) {
-  const pref = getPref(convId);
+  const pref = await getPref(convId);
   const on = pref.tags.filter((t) => t.on).map((t) => t.name);
   const ex = new Set(opts.exclude ?? []);
   const base = (o: Outing) =>

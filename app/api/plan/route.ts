@@ -1,4 +1,4 @@
-import { db, uid } from "@/lib/db";
+import { all, first, run, uid } from "@/lib/db";
 import { logEvent } from "@/lib/director";
 import { enqueue } from "@/lib/outbox";
 import { generatePlan, getPlan, reorderPlan, type PlanParams } from "@/lib/planner";
@@ -9,12 +9,10 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) {
-    const rows = db()
-      .prepare("SELECT id,day,created_at FROM plans ORDER BY created_at DESC")
-      .all();
+    const rows = await all("SELECT id,day,created_at FROM plans ORDER BY created_at DESC");
     return Response.json(rows);
   }
-  const p = getPlan(id);
+  const p = await getPlan(id);
   return p ? Response.json(p) : Response.json({ ok: false }, { status: 404 });
 }
 
@@ -24,15 +22,15 @@ export async function POST(req: Request) {
     params: PlanParams;
   };
   const out = await generatePlan(wishIds, params);
-  logEvent("todo", `让小咪排了${params.day}的行程`);
+  await logEvent("todo", `让小咪排了${params.day}的行程`);
   // 编排过程在小咪单聊里可见
-  enqueue(
+  await enqueue(
     "c-mimi",
     [
       { speaker: "mimi", text: `我在给你排${params.day}`, gapMs: 420 },
       {
         speaker: "mimi",
-        text: "排好了，你去看看要不要调",
+        text: "排好了,你去看看要不要调",
         cards: [
           {
             id: out.planId,
@@ -57,25 +55,25 @@ export async function PATCH(req: Request) {
     confirm?: boolean;
   };
   if (order?.length) {
-    const p = reorderPlan(id, order);
+    const p = await reorderPlan(id, order);
     return Response.json(p);
   }
   if (confirm) {
-    const p = getPlan(id);
+    const p = await getPlan(id);
     if (!p) return Response.json({ ok: false }, { status: 404 });
-    // 提醒默认开启：页面一进来就自动确认，所以必须幂等，不能每次都再写一遍待办
+    // 提醒默认开启:页面一进来就自动确认,所以必须幂等,不能每次都再写一遍待办
     if (p.confirmed) return Response.json({ ok: true, already: true, todos: p.items.length });
-    const ins = db().prepare(
-      "INSERT INTO todos (id,title,due,source,done,created_at) VALUES (?,?,?, 'plan',0,?)",
-    );
-    p.items.forEach((i) =>
-      ins.run(uid("t-"), i.title, `${p.day} ${i.start}`, Date.now()),
-    );
-    db().prepare("UPDATE plans SET confirmed=1 WHERE id=?").run(id);
-    enqueue("c-mimi", [
+    for (const i of p.items) {
+      await run(
+        "INSERT INTO todos (id,title,due,source,done,created_at) VALUES (?,?,?, 'plan',0,?)",
+        [uid("t-"), i.title, `${p.day} ${i.start}`, Date.now()],
+      );
+    }
+    await run("UPDATE plans SET confirmed=1 WHERE id=?", [id]);
+    await enqueue("c-mimi", [
       {
         speaker: "mimi",
-        text: `${p.day}的安排都写进待办了，${p.items[0].start} 出门，我提前一小时叫你喵`,
+        text: `${p.day}的安排都写进待办了,${p.items[0].start} 出门,我提前一小时叫你喵`,
       },
     ]);
     return Response.json({ ok: true, todos: p.items.length });

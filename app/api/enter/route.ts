@@ -5,8 +5,8 @@ import { slotOf } from "@/lib/prefs";
 export const runtime = "nodejs";
 
 /**
- * 进群。同一个时段只给一次今日推荐，换了时段（早/中/下午/晚/深夜）再给新的，
- * 否则每点一次群就刷三条，反而更吵。
+ * 进群。同一个时段只给一次今日推荐,换了时段(早/中/下午/晚/深夜)再给新的,
+ * 否则每点一次群就刷三条,反而更吵。
  */
 export async function POST(req: Request) {
   const { conversationId, force } = (await req.json()) as {
@@ -14,10 +14,10 @@ export async function POST(req: Request) {
     force?: boolean;
   };
   const slot = slotOf();
-  if (!force && hasEntrySet(conversationId, slot))
+  if (!force && (await hasEntrySet(conversationId, slot)))
     return Response.json({ ok: true, fresh: false, slot });
-  const beats = entryBeats(conversationId);
+  const beats = await entryBeats(conversationId);
   if (!beats.length) return Response.json({ ok: true, fresh: false, slot });
-  enqueue(conversationId, beats, Date.now() + 260);
+  await enqueue(conversationId, beats, Date.now() + 260);
   return Response.json({ ok: true, fresh: true, slot });
 }

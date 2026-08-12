@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const c = new URL(req.url).searchParams.get("c") ?? "g-eat";
-  return Response.json({ pref: getPref(c), ceil: priceCeil(c) });
+  return Response.json({ pref: await getPref(c), ceil: priceCeil(c) });
 }
 
-/** 改置顶偏好即改记忆：价格区间是画像里的一条，不是临时筛选条件 */
+/** 改置顶偏好即改记忆:价格区间是画像里的一条,不是临时筛选条件 */
 export async function PATCH(req: Request) {
   const { conversationId, pref } = (await req.json()) as {
     conversationId: string;
@@ -25,16 +25,16 @@ export async function PATCH(req: Request) {
       custom: !!t.custom,
     })),
   };
-  setPref(conversationId, clean);
+  await setPref(conversationId, clean);
   if (conversationId === "g-eat")
-    addFact({
+    await addFact({
       text: `一顿饭预算 ${clean.min} 到 ${clean.max} 元`,
       grp: "预算",
       tag: "budget",
       source: "said",
     });
   if (conversationId === "g-weekend")
-    addFact({
+    await addFact({
       text: `周末活动预算 ${clean.min} 到 ${clean.max} 元`,
       grp: "预算",
       source: "said",

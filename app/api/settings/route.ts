@@ -1,11 +1,11 @@
-import { db, kvGet, kvSet, DEFAULT_SETTINGS } from "@/lib/db";
+import { all, run, kvGet, kvSet, DEFAULT_SETTINGS } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const states = db().prepare("SELECT * FROM agent_state").all();
-  return Response.json({ settings: kvGet("settings", DEFAULT_SETTINGS), states });
+  const states = await all("SELECT * FROM agent_state");
+  return Response.json({ settings: await kvGet("settings", DEFAULT_SETTINGS), states });
 }
 
 export async function PATCH(req: Request) {
@@ -15,10 +15,10 @@ export async function PATCH(req: Request) {
     muted?: boolean;
     silenceDays?: number;
   };
-  if (body.settings) kvSet("settings", body.settings);
+  if (body.settings) await kvSet("settings", body.settings);
   if (typeof body.silenceDays === "number") {
-    const s = kvGet("settings", DEFAULT_SETTINGS) as any;
-    kvSet("settings", {
+    const s = (await kvGet("settings", DEFAULT_SETTINGS)) as any;
+    await kvSet("settings", {
       ...s,
       silenceUntil: body.silenceDays
         ? Date.now() + body.silenceDays * 86400000
@@ -26,8 +26,9 @@ export async function PATCH(req: Request) {
     });
   }
   if (body.agentId)
-    db()
-      .prepare("UPDATE agent_state SET muted=? WHERE agent_id=?")
-      .run(body.muted ? 1 : 0, body.agentId);
+    await run("UPDATE agent_state SET muted=? WHERE agent_id=?", [
+      body.muted ? 1 : 0,
+      body.agentId,
+    ]);
   return Response.json({ ok: true });
 }

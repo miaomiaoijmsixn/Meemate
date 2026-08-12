@@ -1,5 +1,5 @@
 import { AGENTS } from "@/lib/agents";
-import { db, kvGet, DEFAULT_SETTINGS } from "@/lib/db";
+import { all, first, kvGet, DEFAULT_SETTINGS } from "@/lib/db";
 import { llmReady } from "@/lib/llm";
 import { lastPreview, pending } from "@/lib/outbox";
 import type { Profile } from "@/lib/types";
@@ -7,48 +7,62 @@ import type { Profile } from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type ConvRow = {
+  id: string;
+  kind: string;
+  title: string;
+  agent_id: string | null;
+  members: string;
+  intro: string | null;
+  pinned: number;
+  muted: number;
+};
+
 export async function GET() {
-  const convs = db()
-    .prepare("SELECT * FROM conversations ORDER BY pinned DESC, sort DESC")
-    .all() as any[];
-  const list = convs.map((c) => {
-    const last = lastPreview(c.id);
-    const members: string[] = JSON.parse(c.members);
-    return {
-      id: c.id,
-      kind: c.kind,
-      title: c.title,
-      agentId: c.agent_id,
-      members,
-      intro: c.intro,
-      pinned: !!c.pinned,
-      muted: !!c.muted,
-      live: pending(c.id) > 0,
-      preview: last
-        ? {
-            sender: last.sender,
-            senderName: last.sender === "user" ? "你" : AGENTS[last.sender]?.name,
-            text: last.text ?? (last.cards?.length ? "[推荐]" : ""),
-            at: last.deliverAt,
-            mention: last.mention,
-          }
-        : null,
-    };
-  });
-  const todos = db()
-    .prepare("SELECT count(*) n FROM todos WHERE done=0")
-    .get() as { n: number };
-  const plan = db()
-    .prepare("SELECT id FROM plans ORDER BY created_at DESC LIMIT 1")
-    .get() as { id: string } | undefined;
+  const convs = await all<ConvRow>(
+    "SELECT * FROM conversations ORDER BY pinned DESC, sort DESC",
+  );
+  const list = await Promise.all(
+    convs.map(async (c) => {
+      const [last, pend] = await Promise.all([lastPreview(c.id), pending(c.id)]);
+      const members: string[] = JSON.parse(c.members);
+      return {
+        id: c.id,
+        kind: c.kind,
+        title: c.title,
+        agentId: c.agent_id,
+        members,
+        intro: c.intro,
+        pinned: !!c.pinned,
+        muted: !!c.muted,
+        live: pend > 0,
+        preview: last
+          ? {
+              sender: last.sender,
+              senderName: last.sender === "user" ? "你" : AGENTS[last.sender]?.name,
+              text: last.text ?? (last.cards?.length ? "[推荐]" : ""),
+              at: last.deliverAt,
+              mention: last.mention,
+            }
+          : null,
+      };
+    }),
+  );
+  const [todos, plan, profile, onboarded, settings] = await Promise.all([
+    first<{ n: number }>("SELECT count(*) n FROM todos WHERE done=0"),
+    first<{ id: string }>("SELECT id FROM plans ORDER BY created_at DESC LIMIT 1"),
+    kvGet<Profile>("profile", null as unknown as Profile),
+    kvGet<number | string>("onboarded", 0),
+    kvGet("settings", DEFAULT_SETTINGS),
+  ]);
   return Response.json({
     conversations: list,
-    profile: kvGet<Profile>("profile", null as unknown as Profile),
-    onboarded: Number(kvGet<number | string>("onboarded", 0)) === 1,
-    settings: kvGet("settings", DEFAULT_SETTINGS),
+    profile,
+    onboarded: Number(onboarded) === 1,
+    settings,
     agents: AGENTS,
     llm: llmReady(),
-    openTodos: todos.n,
+    openTodos: Number(todos?.n ?? 0),
     latestPlan: plan?.id ?? null,
   });
 }
