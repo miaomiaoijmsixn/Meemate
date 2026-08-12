@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { AGENTS, GROUPS } from "./agents";
 
-const DIR = path.join(process.cwd(), ".data");
+const DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(process.cwd(), ".data");
 const FILE = path.join(DIR, "meemate.db");
 
 declare global {
