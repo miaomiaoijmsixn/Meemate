@@ -1,69 +1,181 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AGENTS } from "@/lib/agents";
+
+/** P1 登录页：不讲功能，直接演示一次群聊 */
+export default function Login() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+  const [step, setStep] = useState(1);
+
+  useEffect(() => {
+    fetch("/api/state")
+      .then((r) => r.json())
+      .then((s) => (s.onboarded ? router.replace("/messages") : setReady(true)))
+      .catch(() => setReady(true));
+  }, [router]);
+
+  // 循环演示：两句对话、一张卡、一次选择
+  useEffect(() => {
+    if (!ready) return;
+    // 1 到 4 循环，第一拍就有内容，不会闪出空卡
+    const id = setInterval(() => setStep((s) => (s % 4) + 1), 1500);
+    return () => clearInterval(id);
+  }, [ready]);
+
+  if (!ready)
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ fontSize: 40 }}>🐱</div>
+      </div>
+    );
+
+  const wai = AGENTS.waimai;
+  const chi = AGENTS.laochi;
+  const show = (n: number) => (step >= n ? 1 : 0);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        padding: "0 26px",
+        background: "linear-gradient(180deg,#FDFCFA 0%,#F4F2E8 55%,#E9EBD6 100%)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="av"
+        style={{
+          width: 54,
+          height: 54,
+          borderRadius: 17,
+          background: "var(--c-mi)",
+          fontSize: 22,
+          color: "#5B4630",
+          margin: "14px 0 18px",
+        }}
+      >
+        🐱
+      </div>
+      <h1 style={{ margin: 0, fontWeight: 600, fontSize: 27, lineHeight: 1.35, letterSpacing: "-.01em" }}>
+        几个朋友，
+        <br />
+        会主动找你说话
+      </h1>
+      <p
+        style={{
+          margin: "12px 0 0",
+          fontWeight: 400, fontSize: 14.5, lineHeight: 1.6,
+          color: "var(--ink-2)",
+          maxWidth: 270,
+        }}
+      >
+        他们记得你的口味和节奏，
+        <br />
+        在你要做决定的那一刻先开口。
+      </p>
+
+      <div
+        style={{
+          marginTop: 22,
+          width: 236,
+          borderRadius: 26,
+          background: "#fff",
+          boxShadow: "0 12px 30px rgba(35,39,30,.10)",
+          padding: "14px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 7,
+          textAlign: "left",
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 500, fontSize: 10.5, lineHeight: 1,
+            color: "var(--ink-3)",
+            textAlign: "center",
+            marginBottom: 2,
+          }}
+        >
+          吃什么群 · 17:40
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="row" style={{ opacity: show(1), transition: "opacity .4s" }}>
+          <div className="av" style={{ background: wai.color, width: 26, height: 26, fontSize: 12 }}>
+            {wai.emoji}
+          </div>
+          <div className="bub" style={{ background: wai.tint, fontSize: 13, padding: "7px 11px" }}>
+            降温了，今天别出门吃了吧
+          </div>
         </div>
-      </main>
+        <div className="row" style={{ opacity: show(2), transition: "opacity .4s" }}>
+          <div className="av" style={{ background: chi.color, width: 26, height: 26, fontSize: 12 }}>
+            {chi.emoji}
+          </div>
+          <div className="bub" style={{ background: chi.tint, fontSize: 13, padding: "7px 11px" }}>
+            又懒。那我给她挑家近的
+          </div>
+        </div>
+        <div className="row" style={{ opacity: show(3), transition: "opacity .4s" }}>
+          <div className="av" style={{ background: wai.color, width: 26, height: 26, fontSize: 12 }}>
+            {wai.emoji}
+          </div>
+          <div className="card" style={{ width: 172 }}>
+            <div className="img" style={{ height: 60, fontSize: 22 }}>
+              🍲
+            </div>
+            <div className="pad" style={{ padding: "8px 10px" }}>
+              <div style={{ fontWeight: 600, fontSize: 12.5, lineHeight: 1.3 }}>蜀香小灶 · 酸辣土豆片</div>
+              <div style={{ fontWeight: 400, fontSize: 10.5, lineHeight: 1.4, color: "var(--ink-3)", marginTop: 2 }}>
+                ￥26 · 28 分钟送达
+              </div>
+            </div>
+            <div className="memo" style={{ padding: "6px 10px", fontSize: 10 }}>
+              你上次说酸辣口重的更下饭
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            gap: 5,
+            justifyContent: "flex-end",
+            marginTop: 2,
+            opacity: show(4),
+            transition: "opacity .4s",
+          }}
+        >
+          <span className="chip" style={{ fontSize: 11, padding: "5px 9px" }}>
+            就它
+          </span>
+          <span className="chip" style={{ fontSize: 11, padding: "5px 9px" }}>
+            换一个
+          </span>
+        </div>
+      </div>
+
+      <div style={{ flex: 1 }} />
+      <button
+        className="btn p"
+        style={{ width: "100%", height: 50, borderRadius: 15, fontSize: 16, flex: "none" }}
+        onClick={() => router.push("/onboarding")}
+      >
+        开始聊天
+      </button>
+      <div
+        style={{
+          fontWeight: 400, fontSize: 11.5, lineHeight: 1.5,
+          color: "var(--ink-3)",
+          margin: "10px 0 26px",
+        }}
+      >
+        对话由 AI 生成 · 一键登录即同意服务条款
+      </div>
     </div>
   );
 }

@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 小咪 Meemate · 会主动找你的 AI 朋友
 
-## Getting Started
+iMessage 式的多 agent 生活伴侣 demo。几个有人格的 AI 朋友记着你的口味和节奏，在你需要做生活决策的那一刻先开口，并把决策落成一次下单、一次导航、一段行程。
 
-First, run the development server:
+产品方案见上一级目录的 `iMessage式AI朋友-产品设计方案.md`。
+
+## 视觉来源
+
+UI 按 claude.ai/design 项目「小咪 Meemate UI」第一轮稿实现（项目 id `cc2c2ef8-ad53-4e19-a652-74348eae9254`）。
+
+- 配色：主色 #4F6035，柠檬 #E7E57C，粉 #F0BEBE，奶油 #FAEDE7，纸底 #FDFCFA
+- 字体：中文衬线（Songti SC 系列），不是系统无衬线
+- 六个 agent 各占一个马卡龙色相（杏／粉／柠檬／薰衣草／薄荷／天蓝）：头像用饱和色，气泡用同色相的浅底，群聊里靠色相分辨谁在说话
+- 已实现设计稿里的 P1 到 P8 八个手机端界面，以及浮层 A（agent 名片）和浮层 B（组件详情与下单确认）
+- 设计稿里同时给了桌面双栏方案（rail 加会话列表加主区，详情从右侧滑入），本版**没有实现**，桌面上仍是设备框里的移动版
+- 状态栏与 home 条只在桌面的设备框里渲染，真机上交给系统，不做假状态栏
+- 设计稿是单一浅色主题，所以这一版去掉了深色模式
+
+## 跑起来
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 http://localhost:3000 ，桌面浏览器里会显示成手机壳，也可以用手机访问局域网地址。第一次进入会走冷启动引导。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+数据存在 `.data/meemate.db`（SQLite，首次启动自动建表和种子数据）。想回到全新用户状态，点右下角时间机器里的重置。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 接真模型（可选）
 
-## Learn More
+不配 key 也能跑通全部流程，此时用的是内置剧本。想让对话真的由模型生成：
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+echo 'DEEPSEEK_API_KEY=sk-xxx' > .env.local
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+配了之后这三处会走真模型，失败会自动退回内置剧本，不会白屏：
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- 用户主动说话时的回复（群聊里谁说、说几句、要不要抬杠，由一次调用统一决定）
+- 晚间日记的撰写与记忆抽取
+- 行程规划里小咪的思考过程改写（排班逻辑仍由代码算，模型只负责说人话）
 
-## Deploy on Vercel
+也支持换成其他 OpenAI 兼容端点：`LLM_BASE_URL`、`LLM_MODEL`。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 三分钟演示动线
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. 走一遍冷启动（5 步对话拿到画像，结束后自动建两个群并立刻发出第一条主动消息）
+2. 右下角时间机器点晚饭，进吃什么群：两个 agent 按节拍对话，各出方案，外卖十级选手一条消息里放两张卡可以横划对比
+3. 对一张卡点不感兴趣，选太贵了。发卡的 agent 会追问后立刻换一张更便宜的，同时写入一条记忆
+4. 点去下单，看跳转确认层（说明将跳到哪个平台、不碰支付），确认后 agent 追一句回来跟我说好不好吃
+5. 时间机器点周末，把两三项加入愿望清单
+6. 去生活页多选后点生成规划，看小咪的思考过程逐条上浮，再看时间轴（含固定场次锚定、中间插一顿饭、冲突提示）
+7. 点加入提醒，节点写进待办
+8. 时间机器点日记，回小咪单聊看日记卡，再去我的页看这条日记以及从它抽出的记忆 chip
+9. 在我的页删一条记忆，小咪立刻回一句我记错了，改过来了
+10. 回吃什么群点任意卡片上的因为...那一行，会跳回记忆册对应条目并高亮
+
+## 群聊的对话策略
+
+进群不寒暄，先给结论。以吃什么群为例，点进去小咪发三条：
+
+1. **问候语**，按时段生成（早上／中午／下午／晚上／深夜五档）
+2. **今日推荐**，一条消息里三行：菜名、价格、步行距离、配送时间、一句推荐理由，每行一个下单或导航按钮加一个换掉
+3. **想再多看看**，点开菜单组件
+
+同一时段只发一次。换了时段（比如从中午到晚上）再进群才会给新的一组，否则每点一次群就刷三条反而更吵。
+
+**顶部常驻偏好条**：价格区间双滑块 + 偏好标签（默认堂食店／点评高分／2公里内，可增删改自定义），初值来自冷启动，可折叠成一行摘要。改完立刻影响推荐与菜单，价格区间会写回记忆册的画像层。偏好变化不自动刷屏，输入框上方出现一个「偏好变了 · 重挑三个」的按钮，由你决定。
+
+**菜单组件**：填满聊天区（置顶偏好条以下），按美食类型筛，同时受偏好约束。想再多看看和输入框上方的 ☰ 菜单都能唤起。
+
+两条硬规则：
+- 价格区间是用户明确设的，任何情况下不越过。筛不出来就空着并提示放宽，绝不悄悄塞超预算的
+- 标签筛不出来时可以放宽，但必须在卡上写明「这几个是放宽标签后的结果」
+
+主动推送（饭点、周末那些定时触发的）仍然是两个 agent 各自出方案、互相抬杠的形式。区别是：推送是他们主动开口，人格是价值；进群是你带着目的来的，效率是价值。
+
+## 实现了什么
+
+- **分条发送与正在输入**：一次回复拆成 2 到 4 条气泡陆续到达，正在输入时长与字数正相关
+- **群聊节拍**：抛观点、抬杠、各出方案、@ 用户收口，不是各发一条广告
+- **偏好采集**：点不感兴趣要给原因，原因即时写入记忆并改变下一张卡
+- **可解释链**：每张卡的推荐理由绑定真实记忆 id，可点回记忆册，再点回它来自哪天的日记
+- **日记即记忆**：日记是自然语言版本，画像是它的结构化抽取，两者同一份数据两个视图
+- **记忆可控**：删除、改写、以后别用这条推荐（留在日记里但不参与推荐），改完立刻有回执
+- **打扰治理**：全局配额、免打扰时段、最近别找我、单 agent 降频，时间机器里可以关掉闸门对比
+- **行程编排**：场次时间锚定、按人流选时段、两地过远时中间插一顿饭、重排后重算时间并提示冲突
+- **闭环**：卡片到清单到规划到待办到提醒，全链路的每个待办都能点回产生它的那条消息
+
+## 架构上值得说的三点
+
+**1. 分条节奏是数据驱动的，不是前端定时器。**
+服务端一次生成整场剧本，写入 `messages` 表时给每条算好 `typing_at` 与 `deliver_at`，SSE 按时间到点才推。所以刷新页面不会一次刷出全部，切走再回来仍是逐条到达的完整对话。见 [lib/outbox.ts](lib/outbox.ts) 与 [app/api/stream/route.ts](app/api/stream/route.ts)。
+
+**2. 一次调用生成整场，而不是每个 agent 各调一次。**
+群聊里两个 agent 的呼应关系在同一次调用里就定好了，既保证他们真的在对话而不是各说各话，token 也只花一次。见 [lib/director.ts](lib/director.ts)。
+
+**3. 数据由代码控制，措辞由模型控制。**
+推荐只能从内容池里挑 key，模型不能编店名；行程排班由代码算，模型只把决策改写成人话。这条边界是推荐类产品可信度的底线。
+
+## 有意没做
+
+- 不自建交易。下单与购票走深链跳转到平台，我们只做候选收敛和偏好记录
+- 内容池是演示用的示例数据（品类和地点类型真实，价格评价为示例）。真上线时这一层换成高德 POI 搜索加人工运营的活动池
+- 行程节点的重排用上下箭头而不是长按拖动，交互降级但校验逻辑是真的
+- 加好友与熟悉度是界面与数据结构，没有真正开出独立单聊
+- 主动消息由时间机器手动触发。真上线时换成 cron，但配额与免打扰是同一套代码
+- 没有真实推送。iOS 的 Web Push 必须先加到主屏幕才可用，这是这类产品在 Web 上最大的结构性限制
+
+## 文件地图
+
+```
+lib/
+  agents.ts     6 个 agent 的人格配置，语言指纹是可执行字段
+  catalog.ts    演示内容池（外卖、餐厅、活动、运动、周边游）
+  director.ts   剧本编排：主动话题、换卡追问、LLM 与规则双路
+  outbox.ts     分条下发的时间计算与投递
+  memory.ts     日记与画像、印证次数合并、卡片理由绑定
+  planner.ts    行程排班、冲突校验、重排
+  db.ts         SQLite schema 与种子
+app/
+  onboarding    冷启动 5 步对话
+  messages      会话列表
+  chat/[id]     单聊与群聊（同一组件）
+  life          愿望清单、行程与待办
+  plan/[id]     思考过程与时间轴
+  me            记忆时间轴与画像、朋友、打扰设置
+  api/          11 个路由，含 SSE
+components/
+  Chat.tsx      消息流、卡片详情浮层、agent 名片浮层
+  CardView.tsx  12 类卡片的统一渲染与动作
+  DemoBar.tsx   时间机器
+```
