@@ -4,33 +4,44 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AGENTS } from "@/lib/agents";
 
-/** P1 登录页：不讲功能，直接演示一次群聊 */
+/**
+ * P1 登录页。
+ *
+ * 修复历史（iOS Safari 卡在猫脸的根因）：老版本用一个 `ready` 状态门控 UI，
+ * fetch 完才让页面显示；接了 Turso 之后 Vercel 冷启动 + 出海 SQL 常常几秒
+ * 起，iOS Safari 又会把 pending 的 fetch 挂到后台不动，结果整个屏幕永远
+ * 只有一只猫脸。
+ *
+ * 现在的做法：登录页永远立刻渲染。fetch 只是「顺便」看看是否要跳过它，
+ * 加了超时和 catch 兜底；它做任何事都不再阻挡按钮显示。
+ */
 export default function Login() {
   const router = useRouter();
-  const [ready, setReady] = useState(false);
   const [step, setStep] = useState(1);
 
   useEffect(() => {
-    fetch("/api/state")
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 4500);
+    fetch("/api/state", { signal: ac.signal, cache: "no-store" })
       .then((r) => r.json())
-      .then((s) => (s.onboarded ? router.replace("/messages") : setReady(true)))
-      .catch(() => setReady(true));
+      .then((s) => {
+        if (s?.onboarded) router.replace("/messages");
+      })
+      .catch(() => {
+        /* 超时或失败：留在登录页，用户可以点开始聊天 */
+      })
+      .finally(() => clearTimeout(timer));
+    return () => {
+      ac.abort();
+      clearTimeout(timer);
+    };
   }, [router]);
 
   // 循环演示：两句对话、一张卡、一次选择
   useEffect(() => {
-    if (!ready) return;
-    // 1 到 4 循环，第一拍就有内容，不会闪出空卡
     const id = setInterval(() => setStep((s) => (s % 4) + 1), 1500);
     return () => clearInterval(id);
-  }, [ready]);
-
-  if (!ready)
-    return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 40 }}>🐱</div>
-      </div>
-    );
+  }, []);
 
   const wai = AGENTS.waimai;
   const chi = AGENTS.laochi;

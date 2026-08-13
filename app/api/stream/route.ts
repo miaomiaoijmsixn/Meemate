@@ -1,3 +1,4 @@
+import { withTenant } from "@/lib/api";
 import { delivered, typingNow } from "@/lib/outbox";
 
 export const runtime = "nodejs";
@@ -11,59 +12,66 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * 消息按 deliver_at 逐条到达,正在输入按 typing_at 出现。
  * 节奏由数据决定而不是前端定时器,所以刷新页面也不会一次刷出全部。
+ *
+ * SSE 是长连接,不能像普通 handler 那样 return 一个 wrapped promise。用
+ * withTenant 在 handler 顶部建立 AsyncLocalStorage 上下文,里面的 delivered/
+ * typingNow 循环调用会跟着 continuation 继承住 tenant。
  */
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const conv = url.searchParams.get("c")!;
-  let seq = Number(url.searchParams.get("seq") ?? 0);
-  const enc = new TextEncoder();
+export const GET = (req: Request) =>
+  withTenant(async () => {
+    const url = new URL(req.url);
+    const conv = url.searchParams.get("c")!;
+    let seq = Number(url.searchParams.get("seq") ?? 0);
+    const enc = new TextEncoder();
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let closed = false;
-      const send = (event: string, data: unknown) => {
-        if (closed) return;
-        try {
-          controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        } catch {
+    const stream = new ReadableStream({
+      async start(controller) {
+        let closed = false;
+        const send = (event: string, data: unknown) => {
+          if (closed) return;
+          try {
+            controller.enqueue(
+              enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+            );
+          } catch {
+            closed = true;
+          }
+        };
+        req.signal.addEventListener("abort", () => {
           closed = true;
-        }
-      };
-      req.signal.addEventListener("abort", () => {
-        closed = true;
-        try {
-          controller.close();
-        } catch {}
-      });
+          try {
+            controller.close();
+          } catch {}
+        });
 
-      let lastTyping: string | null = null;
-      send("hello", { ok: true });
-      while (!closed) {
-        try {
-          const msgs = await delivered(conv, seq);
-          for (const m of msgs) {
-            send("msg", m);
-            seq = m.seq;
+        let lastTyping: string | null = null;
+        send("hello", { ok: true });
+        while (!closed) {
+          try {
+            const msgs = await delivered(conv, seq);
+            for (const m of msgs) {
+              send("msg", m);
+              seq = m.seq;
+            }
+            const t = await typingNow(conv);
+            if (t !== lastTyping) {
+              lastTyping = t;
+              send("typing", { sender: t });
+            }
+          } catch {
+            // 一次查询失败不要炸掉整条流,继续下一轮
           }
-          const t = await typingNow(conv);
-          if (t !== lastTyping) {
-            lastTyping = t;
-            send("typing", { sender: t });
-          }
-        } catch {
-          // 一次查询失败不要炸掉整条流,继续下一轮
+          await sleep(220);
         }
-        await sleep(220);
-      }
-    },
-  });
+      },
+    });
 
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    },
+    return new Response(stream, {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      },
+    });
   });
-}

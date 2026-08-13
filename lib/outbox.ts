@@ -1,4 +1,5 @@
 import { all, first, run, uid } from "./db";
+import { tenantId } from "./tenant";
 import type { Beat, Message, MessageRow } from "./types";
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -8,7 +9,10 @@ export const typingMs = (text?: string) =>
   clamp(Math.round(((text?.length ?? 0) / 12) * 300), 400, 2500);
 
 async function nextSeq(): Promise<number> {
-  const r = await first<{ s: number }>("SELECT COALESCE(MAX(seq),0) s FROM messages");
+  const r = await first<{ s: number }>(
+    "SELECT COALESCE(MAX(seq),0) s FROM messages WHERE tenant=?",
+    [tenantId()],
+  );
   return Number(r?.s ?? 0) + 1;
 }
 
@@ -21,6 +25,7 @@ export async function enqueue(
   beats: Beat[],
   startAt = Date.now(),
 ): Promise<string[]> {
+  const t0 = tenantId();
   let t = startAt;
   let seq = await nextSeq();
   const ids: string[] = [];
@@ -34,9 +39,10 @@ export async function enqueue(
     const deliverAt = t + think;
     const id = uid("x-");
     await run(
-      `INSERT INTO messages (id,seq,conversation_id,sender,kind,text,payload,mention,chips,typing_at,deliver_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO messages (tenant,id,seq,conversation_id,sender,kind,text,payload,mention,chips,typing_at,deliver_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        t0,
         id,
         seq++,
         conversationId,
@@ -62,9 +68,9 @@ export async function pushUser(conversationId: string, text: string): Promise<st
   const id = uid("u-");
   const seq = await nextSeq();
   await run(
-    `INSERT INTO messages (id,seq,conversation_id,sender,kind,text,typing_at,deliver_at)
-     VALUES (?,?,?,'user','text',?,?,?)`,
-    [id, seq, conversationId, text, now, now],
+    `INSERT INTO messages (tenant,id,seq,conversation_id,sender,kind,text,typing_at,deliver_at)
+     VALUES (?,?,?,?,'user','text',?,?,?)`,
+    [tenantId(), id, seq, conversationId, text, now, now],
   );
   return id;
 }
@@ -85,9 +91,9 @@ const hydrate = (r: MessageRow): Message => ({
 /** 已经到点的消息 */
 export async function delivered(conversationId: string, afterSeq = 0): Promise<Message[]> {
   const rows = await all<MessageRow>(
-    `SELECT * FROM messages WHERE conversation_id=? AND deliver_at<=? AND seq>?
+    `SELECT * FROM messages WHERE tenant=? AND conversation_id=? AND deliver_at<=? AND seq>?
      ORDER BY seq ASC`,
-    [conversationId, Date.now(), afterSeq],
+    [tenantId(), conversationId, Date.now(), afterSeq],
   );
   return rows.map(hydrate);
 }
@@ -96,18 +102,18 @@ export async function delivered(conversationId: string, afterSeq = 0): Promise<M
 export async function typingNow(conversationId: string): Promise<string | null> {
   const now = Date.now();
   const r = await first<{ sender: string }>(
-    `SELECT sender FROM messages WHERE conversation_id=? AND typing_at<=? AND deliver_at>?
+    `SELECT sender FROM messages WHERE tenant=? AND conversation_id=? AND typing_at<=? AND deliver_at>?
      ORDER BY seq ASC LIMIT 1`,
-    [conversationId, now, now],
+    [tenantId(), conversationId, now, now],
   );
   return r?.sender ?? null;
 }
 
 export async function lastPreview(conversationId: string): Promise<Message | null> {
   const r = await first<MessageRow>(
-    `SELECT * FROM messages WHERE conversation_id=? AND deliver_at<=?
+    `SELECT * FROM messages WHERE tenant=? AND conversation_id=? AND deliver_at<=?
      ORDER BY seq DESC LIMIT 1`,
-    [conversationId, Date.now()],
+    [tenantId(), conversationId, Date.now()],
   );
   if (!r) return null;
   return hydrate(r);
@@ -116,22 +122,23 @@ export async function lastPreview(conversationId: string): Promise<Message | nul
 /** 还没到点的消息数,用来判断这场还没说完 */
 export async function pending(conversationId: string): Promise<number> {
   const r = await first<{ n: number }>(
-    "SELECT count(*) n FROM messages WHERE conversation_id=? AND deliver_at>?",
-    [conversationId, Date.now()],
+    "SELECT count(*) n FROM messages WHERE tenant=? AND conversation_id=? AND deliver_at>?",
+    [tenantId(), conversationId, Date.now()],
   );
   return Number(r?.n ?? 0);
 }
 
 export async function markShown(keys: string[], conversationId: string): Promise<void> {
+  const t = tenantId();
   for (const k of keys) {
     await run(
-      "INSERT OR REPLACE INTO shown (id,conversation_id,created_at) VALUES (?,?,?)",
-      [k, conversationId, Date.now()],
+      "INSERT OR REPLACE INTO shown (tenant,id,conversation_id,created_at) VALUES (?,?,?,?)",
+      [t, k, conversationId, Date.now()],
     );
   }
 }
 
 export async function shownKeys(): Promise<string[]> {
-  const rows = await all<{ id: string }>("SELECT id FROM shown");
+  const rows = await all<{ id: string }>("SELECT id FROM shown WHERE tenant=?", [tenantId()]);
   return rows.map((r) => r.id);
 }

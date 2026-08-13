@@ -1,4 +1,5 @@
 import { all, first, run, uid, today, kvGet } from "./db";
+import { tenantId } from "./tenant";
 import type { Card } from "./types";
 import type { Item } from "./catalog";
 
@@ -29,19 +30,21 @@ export async function addFact(f: {
   diaryId?: string;
   expiresAt?: number;
 }): Promise<string> {
+  const t = tenantId();
   const exist = await first<{ id: string; hits: number }>(
-    "SELECT id,hits FROM memories WHERE type='fact' AND text=?",
-    [f.text],
+    "SELECT id,hits FROM memories WHERE tenant=? AND type='fact' AND text=?",
+    [t, f.text],
   );
   if (exist) {
-    await run("UPDATE memories SET hits=hits+1, active=1 WHERE id=?", [exist.id]);
+    await run("UPDATE memories SET hits=hits+1, active=1 WHERE tenant=? AND id=?", [t, exist.id]);
     return exist.id;
   }
   const id = uid("m-");
   await run(
-    `INSERT INTO memories (id,type,day,grp,layer,tag,text,source,hits,diary_id,active,usable,expires_at,created_at)
-     VALUES (?,'fact',?,?,?,?,?,?,1,?,1,1,?,?)`,
+    `INSERT INTO memories (tenant,id,type,day,grp,layer,tag,text,source,hits,diary_id,active,usable,expires_at,created_at)
+     VALUES (?,?,'fact',?,?,?,?,?,?,1,?,1,1,?,?)`,
     [
+      t,
       id,
       today(),
       f.grp,
@@ -63,23 +66,25 @@ export async function addDiary(
 ): Promise<string> {
   const id = uid("dy-");
   await run(
-    `INSERT INTO memories (id,type,day,grp,layer,tag,text,source,hits,active,usable,created_at)
-     VALUES (?,'diary',?,'diary','episode',NULL,?, 'said',1,1,1,?)`,
-    [id, today(), text, Date.now()],
+    `INSERT INTO memories (tenant,id,type,day,grp,layer,tag,text,source,hits,active,usable,created_at)
+     VALUES (?,?,'diary',?,'diary','episode',NULL,?, 'said',1,1,1,?)`,
+    [tenantId(), id, today(), text, Date.now()],
   );
   for (const f of facts) await addFact({ ...f, diaryId: id, layer: "episode" });
   return id;
 }
 
 export async function listDiaries() {
+  const t = tenantId();
   const rows = await all<Memory>(
-    "SELECT * FROM memories WHERE type='diary' ORDER BY created_at DESC",
+    "SELECT * FROM memories WHERE tenant=? AND type='diary' ORDER BY created_at DESC",
+    [t],
   );
   const out = [];
   for (const r of rows) {
     const chips = await all<Memory>(
-      "SELECT * FROM memories WHERE diary_id=? AND active=1",
-      [r.id],
+      "SELECT * FROM memories WHERE tenant=? AND diary_id=? AND active=1",
+      [t, r.id],
     );
     out.push({ ...r, chips });
   }
@@ -88,23 +93,24 @@ export async function listDiaries() {
 
 export async function listFacts(): Promise<Memory[]> {
   return all<Memory>(
-    "SELECT * FROM memories WHERE type='fact' AND active=1 ORDER BY hits DESC, created_at DESC",
+    "SELECT * FROM memories WHERE tenant=? AND type='fact' AND active=1 ORDER BY hits DESC, created_at DESC",
+    [tenantId()],
   );
 }
 
 export async function factByTag(tag: string): Promise<Memory | undefined> {
   return first<Memory>(
-    "SELECT * FROM memories WHERE type='fact' AND active=1 AND usable=1 AND tag=? ORDER BY hits DESC LIMIT 1",
-    [tag],
+    "SELECT * FROM memories WHERE tenant=? AND type='fact' AND active=1 AND usable=1 AND tag=? ORDER BY hits DESC LIMIT 1",
+    [tenantId(), tag],
   );
 }
 
 export async function removeFact(id: string): Promise<void> {
-  await run("UPDATE memories SET active=0 WHERE id=?", [id]);
+  await run("UPDATE memories SET active=0 WHERE tenant=? AND id=?", [tenantId(), id]);
 }
 
 export async function toggleUsable(id: string, usable: boolean): Promise<void> {
-  await run("UPDATE memories SET usable=? WHERE id=?", [usable ? 1 : 0, id]);
+  await run("UPDATE memories SET usable=? WHERE tenant=? AND id=?", [usable ? 1 : 0, tenantId(), id]);
 }
 
 const TAG_ANCHOR: Record<string, string> = {

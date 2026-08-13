@@ -9,6 +9,7 @@ import {
   type Outing,
 } from "./catalog";
 import { all, first, run, kvGet, today, uid } from "./db";
+import { tenantId } from "./tenant";
 import { chatJSON, llmReady } from "./llm";
 import { attachReason, factByTag, listFacts, addFact } from "./memory";
 import { markShown, shownKeys } from "./outbox";
@@ -23,7 +24,8 @@ import {
 import type { Beat, Card, Profile, RecoItem, TriggerKind } from "./types";
 
 export async function logEvent(kind: string, text: string, tag?: string) {
-  await run("INSERT INTO events (id,kind,text,tag,created_at) VALUES (?,?,?,?,?)", [
+  await run("INSERT INTO events (tenant,id,kind,text,tag,created_at) VALUES (?,?,?,?,?,?)", [
+    tenantId(),
     uid("e-"),
     kind,
     text,
@@ -36,8 +38,8 @@ export async function todayEvents() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   return all<{ kind: string; text: string; tag: string | null }>(
-    "SELECT * FROM events WHERE created_at>=? ORDER BY created_at ASC",
-    [start.getTime()],
+    "SELECT * FROM events WHERE tenant=? AND created_at>=? ORDER BY created_at ASC",
+    [tenantId(), start.getTime()],
   );
 }
 
@@ -189,7 +191,8 @@ async function weekendBeats(): Promise<Beat[]> {
 
 async function morningBeats(): Promise<Beat[]> {
   const todos = await all<{ title: string }>(
-    "SELECT title FROM todos WHERE done=0 ORDER BY created_at DESC LIMIT 3",
+    "SELECT title FROM todos WHERE tenant=? AND done=0 ORDER BY created_at DESC LIMIT 3",
+    [tenantId()],
   );
   const sleepFact = await factByTag("sleep");
   const card: Card = {
@@ -315,8 +318,8 @@ export function outingToReco(o: Outing): RecoItem {
 /** 这个群里已经推过的东西,换一批时排除掉 */
 export async function shownRecoKeys(conversationId: string): Promise<string[]> {
   const rows = await all<{ payload: string }>(
-    "SELECT payload FROM messages WHERE conversation_id=? AND kind='cards' AND payload LIKE ?",
-    [conversationId, '%"recoList"%'],
+    "SELECT payload FROM messages WHERE tenant=? AND conversation_id=? AND kind='cards' AND payload LIKE ?",
+    [tenantId(), conversationId, '%"recoList"%'],
   );
   const keys = new Set<string>();
   for (const r of rows) {
@@ -333,8 +336,8 @@ export const shownDishKeys = shownRecoKeys;
 export async function hasEntrySet(conversationId: string, slot: string): Promise<boolean> {
   const r = await first<{ n: number }>(
     `SELECT count(*) n FROM messages
-     WHERE conversation_id=? AND kind='cards' AND payload LIKE ? AND payload LIKE ?`,
-    [conversationId, '%"recoList"%', `%"slot":"${slot}"%`],
+     WHERE tenant=? AND conversation_id=? AND kind='cards' AND payload LIKE ? AND payload LIKE ?`,
+    [tenantId(), conversationId, '%"recoList"%', `%"slot":"${slot}"%`],
   );
   return Number(r?.n ?? 0) > 0;
 }
@@ -652,7 +655,7 @@ export async function respondBeats(
     kind: string;
     agent_id: string | null;
     members: string;
-  }>("SELECT * FROM conversations WHERE id=?", [conversationId]);
+  }>("SELECT * FROM conversations WHERE tenant=? AND id=?", [tenantId(), conversationId]);
   if (!conv) return [];
   const members: string[] =
     conv.kind === "single" ? [conv.agent_id!] : JSON.parse(conv.members);
@@ -668,9 +671,9 @@ export async function respondBeats(
 
   if (llmReady()) {
     const recent = await all<{ sender: string; text: string | null }>(
-      `SELECT sender,text FROM messages WHERE conversation_id=? AND deliver_at<=?
+      `SELECT sender,text FROM messages WHERE tenant=? AND conversation_id=? AND deliver_at<=?
        ORDER BY seq DESC LIMIT 8`,
-      [conversationId, Date.now()],
+      [tenantId(), conversationId, Date.now()],
     );
     const cands = CATALOG.filter((i) =>
       members.some((m) => AGENTS[m].domain.includes(i.kind)),

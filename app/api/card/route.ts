@@ -1,3 +1,4 @@
+import { withTenant } from "@/lib/api";
 import { findDish, findItem, findOuting } from "@/lib/catalog";
 import { first, run, uid } from "@/lib/db";
 import {
@@ -9,11 +10,13 @@ import {
 } from "@/lib/director";
 import { AGENTS } from "@/lib/agents";
 import { enqueue } from "@/lib/outbox";
+import { tenantId } from "@/lib/tenant";
 import type { Item } from "@/lib/catalog";
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+export const POST = (req: Request) =>
+  withTenant(async () => {
   const b = (await req.json()) as {
     action: "replace" | "wish" | "handoff";
     conversationId: string;
@@ -78,14 +81,16 @@ export async function POST(req: Request) {
     }
     if (b.action === "wish") {
       const title = dish ? `${dish.shop} · ${dish.dish}` : outing!.name;
+      const t = tenantId();
       const exist = await first<{ id: string }>(
-        "SELECT id FROM wishes WHERE title=? AND status='open'",
-        [title],
+        "SELECT id FROM wishes WHERE tenant=? AND title=? AND status='open'",
+        [t, title],
       );
       if (!exist) {
         await run(
-          "INSERT INTO wishes (id,title,type,subtitle,meta,source_agent,status,created_at) VALUES (?,?,?,?,?,?, 'open',?)",
+          "INSERT INTO wishes (tenant,id,title,type,subtitle,meta,source_agent,status,created_at) VALUES (?,?,?,?,?,?,?, 'open',?)",
           [
+            t,
             uid("w-"),
             title,
             dish ? (dish.dine ? "restaurant" : "delivery") : outingType(outing!.cat),
@@ -121,14 +126,16 @@ export async function POST(req: Request) {
 
   if (b.action === "wish") {
     if (!item) return Response.json({ ok: false }, { status: 404 });
+    const t = tenantId();
     const exist = await first<{ id: string }>(
-      "SELECT id FROM wishes WHERE title=? AND status='open'",
-      [item.title],
+      "SELECT id FROM wishes WHERE tenant=? AND title=? AND status='open'",
+      [t, item.title],
     );
     if (!exist) {
       await run(
-        "INSERT INTO wishes (id,title,type,subtitle,meta,source_agent,deadline,status,created_at) VALUES (?,?,?,?,?,?,?, 'open',?)",
+        "INSERT INTO wishes (tenant,id,title,type,subtitle,meta,source_agent,deadline,status,created_at) VALUES (?,?,?,?,?,?,?,?, 'open',?)",
         [
+          t,
           uid("w-"),
           item.title,
           item.kind,
@@ -163,7 +170,7 @@ export async function POST(req: Request) {
   }
 
   return Response.json({ ok: false }, { status: 400 });
-}
+  });
 
 /** 活动类型映射到愿望清单的图标类型 */
 function outingType(cat: string) {

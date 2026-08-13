@@ -1,5 +1,6 @@
 import { findDish, findItem, findOuting } from "./catalog";
 import { all, first, run, uid, kvGet, localDate } from "./db";
+import { tenantId } from "./tenant";
 import { chatJSON, llmReady } from "./llm";
 import { listFacts } from "./memory";
 import type { Profile } from "./types";
@@ -73,7 +74,7 @@ type WishRow = {
 export async function generatePlan(wishIds: string[], params: PlanParams) {
   const wishes: WishRow[] = [];
   for (const id of wishIds) {
-    const w = await first<WishRow>("SELECT * FROM wishes WHERE id=?", [id]);
+    const w = await first<WishRow>("SELECT * FROM wishes WHERE tenant=? AND id=?", [tenantId(), id]);
     if (w) wishes.push(w);
   }
 
@@ -202,10 +203,12 @@ export async function generatePlan(wishIds: string[], params: PlanParams) {
     if (out?.thinking?.length) thinking.splice(0, thinking.length, ...out.thinking);
   }
 
+  const t = tenantId();
   const planId = uid("p-");
   await run(
-    "INSERT INTO plans (id,day,date,params,thinking,notes,created_at) VALUES (?,?,?,?,?,?,?)",
+    "INSERT INTO plans (tenant,id,day,date,params,thinking,notes,created_at) VALUES (?,?,?,?,?,?,?,?)",
     [
+      t,
       planId,
       params.day,
       dateOfWeekday(params.day),
@@ -217,8 +220,9 @@ export async function generatePlan(wishIds: string[], params: PlanParams) {
   );
   for (const i of items) {
     await run(
-      "INSERT INTO plan_items (id,plan_id,seq,start,dur,title,reason,transit,agent_id,wish_id,addr,booking,link,price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO plan_items (tenant,id,plan_id,seq,start,dur,title,reason,transit,agent_id,wish_id,addr,booking,link,price) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [
+        t,
         uid("pi-"),
         planId,
         i.seq,
@@ -266,11 +270,12 @@ type PlanItemRow = {
 };
 
 export async function getPlan(id: string) {
-  const p = await first<PlanRow>("SELECT * FROM plans WHERE id=?", [id]);
+  const t = tenantId();
+  const p = await first<PlanRow>("SELECT * FROM plans WHERE tenant=? AND id=?", [t, id]);
   if (!p) return null;
   const items = await all<PlanItemRow>(
-    "SELECT * FROM plan_items WHERE plan_id=? ORDER BY seq ASC",
-    [id],
+    "SELECT * FROM plan_items WHERE tenant=? AND plan_id=? ORDER BY seq ASC",
+    [t, id],
   );
   return {
     id: p.id,
@@ -312,16 +317,17 @@ export async function reorderPlan(id: string, orderedItemIds: string[]) {
     if (!it) continue;
     if (idx > 0) cursor += transitMin;
     // 第一站前面不该有交通耗时,重排后要把它清掉
-    await run("UPDATE plan_items SET seq=?, start=?, transit=? WHERE id=?", [
+    await run("UPDATE plan_items SET seq=?, start=?, transit=? WHERE tenant=? AND id=?", [
       idx + 1,
       toHM(cursor),
       idx > 0 ? `${plan.params.transit} 约 ${transitMin} 分钟` : null,
+      tenantId(),
       iid,
     ]);
     const w = it.wishId
       ? await first<{ subtitle: string | null; meta: string | null }>(
-          "SELECT subtitle,meta FROM wishes WHERE id=?",
-          [it.wishId],
+          "SELECT subtitle,meta FROM wishes WHERE tenant=? AND id=?",
+          [tenantId(), it.wishId],
         )
       : undefined;
     const fixed = fixedTime(
@@ -339,8 +345,9 @@ export async function reorderPlan(id: string, orderedItemIds: string[]) {
   }
   // 时间类提示全部按新顺序重算,别让上一版的说法留在页面上自相矛盾
   const keep = plan.notes.filter((n) => !/赶不上|才开场|路上时间/.test(n));
-  await run("UPDATE plans SET notes=? WHERE id=?", [
+  await run("UPDATE plans SET notes=? WHERE tenant=? AND id=?", [
     JSON.stringify([...keep, ...warn]),
+    tenantId(),
     id,
   ]);
   return getPlan(id);
