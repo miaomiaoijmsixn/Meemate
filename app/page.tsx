@@ -57,7 +57,8 @@ export default function Login() {
         textAlign: "center",
         padding: "0 26px",
         background: "linear-gradient(180deg,#FDFCFA 0%,#F4F2E8 55%,#E9EBD6 100%)",
-        overflow: "hidden",
+        overflowY: "auto",
+        overflowX: "hidden",
       }}
     >
       <div
