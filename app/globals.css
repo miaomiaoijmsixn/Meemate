@@ -62,6 +62,7 @@ button {
   width: 100%;
   max-width: 372px;
   margin: 0 auto;
+  height: 100vh; /* iOS < 15.4 不认 dvh,先给保底值 */
   height: 100dvh;
   overflow: hidden;
   background: var(--surface);
@@ -80,6 +81,7 @@ button {
   }
   .phone {
     height: 826px;
+    max-height: 94vh; /* iOS < 15.4 不认 dvh,先给保底值 */
     max-height: 94dvh;
     border-radius: 38px;
     outline: 9px solid #1c1e19;
