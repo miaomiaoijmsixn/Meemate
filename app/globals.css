@@ -279,6 +279,21 @@ button {
   }
 }
 
+/* ---------------- 骨架屏：首次加载占位，别让用户对着空白猜是不是卡了 ---------------- */
+.skel {
+  background: var(--line);
+  animation: skel-pulse 1.1s ease-in-out infinite;
+}
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* ---------------- 卡片 ---------------- */
 .card {
   width: 262px;

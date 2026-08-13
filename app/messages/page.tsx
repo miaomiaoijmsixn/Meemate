@@ -34,6 +34,8 @@ export default function Messages() {
   const [plan, setPlan] = useState<string | null>(null);
   const [todos, setTodos] = useState(0);
   const [llm, setLlm] = useState(false);
+  // 只给首次拉取用：轮询刷新时列表已经有内容，不该再闪一遍骨架屏
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = () =>
@@ -45,6 +47,7 @@ export default function Messages() {
           setPlan(s.latestPlan);
           setTodos(s.openTodos);
           setLlm(s.llm);
+          setLoading(false);
         });
     load();
     const t = setInterval(load, 2500);
@@ -83,7 +86,18 @@ export default function Messages() {
       )}
 
       <div style={{ flex: 1, overflowY: "auto" }} className="no-scrollbar">
-        {convs.map((c) => {
+        {loading &&
+          [46, 46, 46].map((_, i) => (
+            <div key={i} className="li">
+              <div className="skel" style={{ width: 46, height: 46, borderRadius: "50%", flex: "none" }} />
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 7 }}>
+                <div className="skel" style={{ width: "38%", height: 13, borderRadius: 6 }} />
+                <div className="skel" style={{ width: "68%", height: 12, borderRadius: 6 }} />
+              </div>
+            </div>
+          ))}
+
+        {!loading && convs.map((c) => {
           const members = c.members.map((m) => agents[m]).filter(Boolean);
           return (
             <Link key={c.id} href={`/chat/${c.id}`}>

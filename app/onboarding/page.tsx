@@ -42,6 +42,17 @@ export default function Onboarding() {
     }
   }
 
+  /** 打字气泡陪跑真实网络请求：慢的时候不冷场，快的时候不闪烁 */
+  async function withTyping<T>(fn: () => Promise<T>): Promise<T> {
+    setTyping(true);
+    const start = performance.now();
+    const result = await fn();
+    const rest = 500 - (performance.now() - start);
+    if (rest > 0) await new Promise((r) => setTimeout(r, rest));
+    setTyping(false);
+    return result;
+  }
+
   const opened = useRef(false);
   useEffect(() => {
     // 严格模式下 effect 会跑两次，开场白只说一遍
@@ -87,20 +98,22 @@ export default function Onboarding() {
       } catch {}
     }
     await say(allow ? ["好，那明早见"] : ["行，那我只在应用里出现"]);
-    await fetch("/api/onboarding", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        nickname: nickname || "你",
-        area: area && area !== "先不说" ? area : "北京 西土城",
-        avoid,
-        taste,
-        budget: budget === "30 以内" ? "20 到 30" : budget === "30–80" ? "30 到 80" : "25 到 40",
-        weekend,
-        wake: "08:30",
-        sleep: "01:00",
+    await withTyping(() =>
+      fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          nickname: nickname || "你",
+          area: area && area !== "先不说" ? area : "北京 西土城",
+          avoid,
+          taste,
+          budget: budget === "30 以内" ? "20 到 30" : budget === "30–80" ? "30 到 80" : "25 到 40",
+          weekend,
+          wake: "08:30",
+          sleep: "01:00",
+        }),
       }),
-    });
+    );
     await say(["我把你拉进两个群了：吃什么、周末去哪", "他们到点会自己开口，你先去看看"]);
     setTimeout(() => router.replace("/messages"), 900);
   }
